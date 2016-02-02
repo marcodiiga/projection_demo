@@ -9,25 +9,55 @@
   <script id="visualize-shader-fs" type="x-shader/x-fragment">
     precision highp float;
     
+    // Global quad data
     uniform sampler2D texFieldSampler;
-
     varying vec2 pass_TextureCoords;
 
+    // Projectors data
+    varying vec3 pass_Projector0_Pos;
+    varying mat4 pass_Projector0_MVPMatrix;
+    uniform sampler2D texProjector0Sampler;
+
+    bool inFrustum(mat4 M, vec3 p) {
+        vec4 Pclip = M * vec4(p, 1.);
+        return abs(Pclip.x) < Pclip.w && 
+               abs(Pclip.y) < Pclip.w && 
+               0. < Pclip.z && 
+               Pclip.z < Pclip.w;
+    }
+
     void main(void) {
-      gl_FragColor = texture2D(texFieldSampler, pass_TextureCoords);
+      if(inFrustum(pass_Projector0_MVPMatrix, pass_Projector0_Pos)) {
+        // In-projector 0 region, do a texture lookup
+        vec4 Pclip = pass_Projector0_MVPMatrix * vec4(pass_Projector0_Pos, 1.);
+        vec2 texture_uv = vec2((Pclip.x + Pclip.w) / (2. * Pclip.w), (Pclip.y + Pclip.w) / (2. * Pclip.w));
+        gl_FragColor = texture2D(texProjector0Sampler, texture_uv); // vec4(1.0, 0.0, 0.0, 1.0);
+      } else
+        gl_FragColor = texture2D(texFieldSampler, pass_TextureCoords); // Quad region
     }
   </script>
   <script id="visualize-shader-vs" type="x-shader/x-vertex">
     precision highp float;
+
+    // Global quad data
     attribute vec3 aVertexPosition;
     attribute vec2 aTextureCoords;
 
     uniform mat4 uPerspectiveMatrix;
     uniform mat4 uModelViewMatrix;
 
-    varying vec2 pass_TextureCoords;  
+    varying vec2 pass_TextureCoords;
+
+    // Projectors data
+    uniform mat4 uProjector0_PerspectiveMatrix;
+    uniform mat4 uProjector0_ModelViewMatrix;
+    varying vec3 pass_Projector0_Pos;
+    varying mat4 pass_Projector0_MVPMatrix;
     
     void main(void) {
+      pass_Projector0_MVPMatrix = uProjector0_PerspectiveMatrix * uProjector0_ModelViewMatrix;
+      pass_Projector0_Pos = aVertexPosition;
+      // UV coords and position in the quad
       pass_TextureCoords = aTextureCoords;
       gl_Position = uPerspectiveMatrix * uModelViewMatrix * vec4(aVertexPosition, 1.0);
     }
@@ -65,9 +95,10 @@
       setupTextures();
       //initFramebuffer();
       setupMouseInput(canvas);
+      setupProjectorsMatrices();
 
-      ctx = gl.clearColor(0.0, 0.0, 0.0, 1.0);
-      ctx = gl.enable(gl.DEPTH_TEST);
+      gl.clearColor(0.0, 0.0, 0.0, 1.0);
+      gl.enable(gl.DEPTH_TEST);
       
       paintLoop();
     }
@@ -78,8 +109,8 @@
     function setupGeometries() 
     {
       { // Set up a VBO with the field quad data        
-        ctx = quad_data = gl.createBuffer();
-        ctx = gl.bindBuffer(gl.ARRAY_BUFFER, quad_data);
+        quad_data = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, quad_data);
         var vbo_data = [
           3.0, 0.0, -2.0,
           0.0, 0.0,
@@ -90,18 +121,18 @@
           3.0, 0.0, 2.0,
           0.0, 1.0
         ];
-        ctx = gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vbo_data), gl.STATIC_DRAW);
-        ctx = quad_indices = gl.createBuffer();
-        ctx = gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, quad_indices);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vbo_data), gl.STATIC_DRAW);
+        quad_indices = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, quad_indices);
         var indices = [
           0, 3, 2,
           2, 1, 0
         ];
-        ctx = gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
         quad_indices.count = indices.length;
       }      
-      ctx = gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
-      ctx = gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
     }
 
     var visualizeProgram;
@@ -123,15 +154,15 @@
 
       var shader;
       if (shaderScript.type == "x-shader/x-fragment") {
-        ctx = shader = gl.createShader(gl.FRAGMENT_SHADER);
+        shader = gl.createShader(gl.FRAGMENT_SHADER);
       } else if (shaderScript.type == "x-shader/x-vertex") {
-        ctx = shader = gl.createShader(gl.VERTEX_SHADER);
+        shader = gl.createShader(gl.VERTEX_SHADER);
       } else {
         return null;
       }
 
-      ctx = gl.shaderSource(shader, str);
-      ctx = gl.compileShader(shader);
+      gl.shaderSource(shader, str);
+      gl.compileShader(shader);
 
       if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
         alert(gl.getShaderInfoLog(shader));
@@ -144,39 +175,60 @@
     function setupShaderPrograms() {      
       var vertexShader = getShader(gl, "visualize-shader-vs");
       var fragmentShader = getShader(gl, "visualize-shader-fs");
-      ctx = visualizeProgram = gl.createProgram();
-      ctx = gl.attachShader(visualizeProgram, vertexShader);
-      ctx = gl.attachShader(visualizeProgram, fragmentShader);
-      ctx = gl.linkProgram(visualizeProgram);
+      visualizeProgram = gl.createProgram();
+      gl.attachShader(visualizeProgram, vertexShader);
+      gl.attachShader(visualizeProgram, fragmentShader);
+      gl.linkProgram(visualizeProgram);
       if (!gl.getProgramParameter(visualizeProgram, gl.LINK_STATUS))
           alert("Could not initialize shaders");
-      ctx = gl.useProgram(visualizeProgram);
+      gl.useProgram(visualizeProgram);
       // Bind uniforms and attributes      
-      ctx = visualizeProgram.uPerspectiveMatrix = gl.getUniformLocation(visualizeProgram, "uPerspectiveMatrix");
-      ctx = visualizeProgram.uModelViewMatrix = gl.getUniformLocation(visualizeProgram, "uModelViewMatrix");
-      ctx = visualizeProgram.texFieldSampler = gl.getUniformLocation(visualizeProgram, "texFieldSampler");
-      ctx = visualizeProgram.aVertexPosition = gl.getAttribLocation(visualizeProgram, "aVertexPosition");
-      ctx = gl.enableVertexAttribArray(visualizeProgram.aVertexPosition);
-      ctx = visualizeProgram.aTextureCoords = gl.getAttribLocation(visualizeProgram, "aTextureCoords");
-      ctx = gl.enableVertexAttribArray(visualizeProgram.aTextureCoords);
+      visualizeProgram.uPerspectiveMatrix = gl.getUniformLocation(visualizeProgram, "uPerspectiveMatrix");
+      visualizeProgram.uModelViewMatrix = gl.getUniformLocation(visualizeProgram, "uModelViewMatrix");
+      visualizeProgram.texFieldSampler = gl.getUniformLocation(visualizeProgram, "texFieldSampler");
+      visualizeProgram.aVertexPosition = gl.getAttribLocation(visualizeProgram, "aVertexPosition");
+      gl.enableVertexAttribArray(visualizeProgram.aVertexPosition);
+      visualizeProgram.aTextureCoords = gl.getAttribLocation(visualizeProgram, "aTextureCoords");
+      gl.enableVertexAttribArray(visualizeProgram.aTextureCoords);
+      // Projectors' uniforms and textures
+      visualizeProgram.uProjector0_ModelViewMatrix = gl.getUniformLocation(visualizeProgram, "uProjector0_ModelViewMatrix");
+      visualizeProgram.uProjector0_PerspectiveMatrix = gl.getUniformLocation(visualizeProgram, "uProjector0_PerspectiveMatrix");
+      visualizeProgram.texProjector0Sampler = gl.getUniformLocation(visualizeProgram, "texProjector0Sampler");      
     }
 
     var fieldTexture;
     var fieldTextureIsSafeToRender = false;
 
+    // First projector's texture
+    var centerFieldTexture;
+    var centerFieldTextureIsSafeToRender = false;
+
     function setupTextures() {
-      ctx = fieldTexture = gl.createTexture();
+      fieldTexture = gl.createTexture();
       fieldTexture.image = new Image();
       fieldTexture.image.onload = function () {
-        ctx = gl.bindTexture(gl.TEXTURE_2D, fieldTexture);
-        ctx = gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);        
-        ctx = gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, fieldTexture.image);
-        ctx = gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        ctx = gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        ctx = gl.bindTexture(gl.TEXTURE_2D, null);
+        gl.bindTexture(gl.TEXTURE_2D, fieldTexture);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);        
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, fieldTexture.image);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.bindTexture(gl.TEXTURE_2D, null);
         fieldTextureIsSafeToRender = true;
       }
       fieldTexture.image.src = "assets/testfield.png";
+
+      centerFieldTexture = gl.createTexture();
+      centerFieldTexture.image = new Image();
+      centerFieldTexture.image.onload = function () {
+        gl.bindTexture(gl.TEXTURE_2D, centerFieldTexture);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);        
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, centerFieldTexture.image);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        centerFieldTextureIsSafeToRender = true;
+      }
+      centerFieldTexture.image.src = "assets/centerfield.png";
     }
 
     var mouseDown = false;
@@ -225,38 +277,55 @@
         lastMouseY = newY;
     }
 
+    // Projectors matrices
+    var projector0_modelViewMatrix = mat4.create();
+    var projector0_perspectiveMatrix = mat4.create();
+
+    function setupProjectorsMatrices() {
+      // First time initialization of projectors' matrices
+      mat4.lookAt([2, 3, 3], [0, 0, 0.5], [0, 1, 0], projector0_modelViewMatrix);
+      mat4.perspective(25, 3 / 2, 0.1, 50.0, projector0_perspectiveMatrix);
+    }
+
     function drawScene() {
 
-      if(fieldTextureIsSafeToRender == false)
+      if(fieldTextureIsSafeToRender == false || centerFieldTextureIsSafeToRender == false)
         return;
 
-      ctx = gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-      // Set up common uniforms
+      // Set up common uniforms for the quad field
       var perspectiveMatrix = mat4.create();
       var modelViewMatrix = mat4.create();      
       mat4.lookAt([0, 10, -10], [0, 0, 0], [0, 1, 0], modelViewMatrix);
       mat4.multiply(modelViewMatrix, sceneRotationMatrix, modelViewMatrix);
-      mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 0.1, 50.0, perspectiveMatrix);    
-      ctx = gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);      
-      ctx = gl.useProgram(visualizeProgram);
+      mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 0.1, 50.0, perspectiveMatrix);
+      gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);      
+      gl.useProgram(visualizeProgram);
 
-      // Draw the quad
-      ctx = gl.uniformMatrix4fv(visualizeProgram.uPerspectiveMatrix, false /* WebGL supports column-major only */, perspectiveMatrix);
-      ctx = gl.uniformMatrix4fv(visualizeProgram.uModelViewMatrix, false /* WebGL supports column-major only */, modelViewMatrix);
-      ctx = gl.activeTexture(gl.TEXTURE0);
-      ctx = gl.bindTexture(gl.TEXTURE_2D, fieldTexture);
-      ctx = gl.uniform1i(visualizeProgram.texFieldSampler, 0);
-      ctx = gl.bindBuffer(gl.ARRAY_BUFFER, quad_data);
-      ctx = gl.vertexAttribPointer(visualizeProgram.aVertexPosition, 3, gl.FLOAT, false, 5 * 4 /* 5 floats */, 0);
-      ctx = gl.vertexAttribPointer(visualizeProgram.aTextureCoords, 2, gl.FLOAT, false, 5 * 4 /* 5 floats */, 3 * 4);
-      ctx = gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, quad_indices);
-      ctx = gl.drawElements(gl.TRIANGLES, quad_indices.count, gl.UNSIGNED_SHORT, 0);
+      // Set up uniforms and texture for the first projector
+      gl.uniformMatrix4fv(visualizeProgram.uProjector0_ModelViewMatrix, false /* WebGL supports column-major only */, projector0_modelViewMatrix);
+      gl.uniformMatrix4fv(visualizeProgram.uProjector0_PerspectiveMatrix, false /* WebGL supports column-major only */, projector0_perspectiveMatrix);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, centerFieldTexture);
+      gl.uniform1i(visualizeProgram.texProjector0Sampler, 1);
+
+      // Set uniforms for the quad and draw it
+      gl.uniformMatrix4fv(visualizeProgram.uPerspectiveMatrix, false /* WebGL supports column-major only */, perspectiveMatrix);
+      gl.uniformMatrix4fv(visualizeProgram.uModelViewMatrix, false /* WebGL supports column-major only */, modelViewMatrix);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, fieldTexture);
+      gl.uniform1i(visualizeProgram.texFieldSampler, 0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, quad_data);
+      gl.vertexAttribPointer(visualizeProgram.aVertexPosition, 3, gl.FLOAT, false, 5 * 4 /* 5 floats */, 0);
+      gl.vertexAttribPointer(visualizeProgram.aTextureCoords, 2, gl.FLOAT, false, 5 * 4 /* 5 floats */, 3 * 4);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, quad_indices);
+      gl.drawElements(gl.TRIANGLES, quad_indices.count, gl.UNSIGNED_SHORT, 0);
     
       // Cleanup
-      ctx = gl.bindTexture(gl.TEXTURE_2D, null);
-      ctx = gl.bindBuffer(gl.ARRAY_BUFFER, null);
-      ctx = gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      gl.bindBuffer(gl.ARRAY_BUFFER, null);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
     }
     
     function paintLoop() {    
