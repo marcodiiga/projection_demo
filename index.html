@@ -27,13 +27,22 @@
     }
 
     void main(void) {
+      vec4 quad_texel = texture2D(texFieldSampler, pass_TextureCoords); // Quad region
+
+      // Weights used when blending together pixel colors. If both are 1.0, the resulting pixel will
+      // have an equal mixture of their rgba values
+      float quad_texel_weight = 1.5;
+      float projectors_texels_weight = 1.0;
+
       if(inFrustum(pass_Projector0_MVPMatrix, pass_Projector0_Pos)) {
         // In-projector 0 region, do a texture lookup
         vec4 Pclip = pass_Projector0_MVPMatrix * vec4(pass_Projector0_Pos, 1.);
         vec2 texture_uv = vec2((Pclip.x + Pclip.w) / (2. * Pclip.w), (Pclip.y + Pclip.w) / (2. * Pclip.w));
-        gl_FragColor = texture2D(texProjector0Sampler, texture_uv); // vec4(1.0, 0.0, 0.0, 1.0);
+        vec4 texel = texture2D(texProjector0Sampler, texture_uv);
+        // Now blend this color with the background quad's color       
+        gl_FragColor = (projectors_texels_weight * texel + quad_texel_weight * quad_texel) / (quad_texel_weight + projectors_texels_weight); // vec4(1.0, 0.0, 0.0, 1.0);
       } else
-        gl_FragColor = texture2D(texFieldSampler, pass_TextureCoords); // Quad region
+        gl_FragColor = quad_texel; // Quad region
     }
   </script>
   <script id="visualize-shader-vs" type="x-shader/x-vertex">
