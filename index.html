@@ -9,13 +9,14 @@
   <script id="visualize-shader-fs" type="x-shader/x-fragment">
     precision highp float;
     
+    // Global quad data
     uniform sampler2D texFieldSampler;
-
     varying vec2 pass_TextureCoords;
 
     // Projectors data
     varying vec3 pass_Projector0_Pos;
     varying mat4 pass_Projector0_MVPMatrix;
+    uniform sampler2D texProjector0Sampler;
 
     bool inFrustum(mat4 M, vec3 p) {
         vec4 Pclip = M * vec4(p, 1.);
@@ -26,10 +27,13 @@
     }
 
     void main(void) {
-      if(inFrustum(pass_Projector0_MVPMatrix, pass_Projector0_Pos))
-        gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
-      else
-        gl_FragColor = texture2D(texFieldSampler, pass_TextureCoords);
+      if(inFrustum(pass_Projector0_MVPMatrix, pass_Projector0_Pos)) {
+        // In-projector 0 region, do a texture lookup
+        vec4 Pclip = pass_Projector0_MVPMatrix * vec4(pass_Projector0_Pos, 1.);
+        vec2 texture_uv = vec2((Pclip.x + Pclip.w) / (2. * Pclip.w), (Pclip.y + Pclip.w) / (2. * Pclip.w));
+        gl_FragColor = texture2D(texProjector0Sampler, texture_uv); // vec4(1.0, 0.0, 0.0, 1.0);
+      } else
+        gl_FragColor = texture2D(texFieldSampler, pass_TextureCoords); // Quad region
     }
   </script>
   <script id="visualize-shader-vs" type="x-shader/x-vertex">
@@ -186,9 +190,10 @@
       gl.enableVertexAttribArray(visualizeProgram.aVertexPosition);
       visualizeProgram.aTextureCoords = gl.getAttribLocation(visualizeProgram, "aTextureCoords");
       gl.enableVertexAttribArray(visualizeProgram.aTextureCoords);
-      // Projectors' uniforms
+      // Projectors' uniforms and textures
       visualizeProgram.uProjector0_ModelViewMatrix = gl.getUniformLocation(visualizeProgram, "uProjector0_ModelViewMatrix");
       visualizeProgram.uProjector0_PerspectiveMatrix = gl.getUniformLocation(visualizeProgram, "uProjector0_PerspectiveMatrix");
+      visualizeProgram.texProjector0Sampler = gl.getUniformLocation(visualizeProgram, "texProjector0Sampler");      
     }
 
     var fieldTexture;
@@ -278,7 +283,7 @@
 
     function setupProjectorsMatrices() {
       // First time initialization of projectors' matrices
-      mat4.lookAt([0, 3, 3], [0, 0, 0.5], [0, 1, 0], projector0_modelViewMatrix);
+      mat4.lookAt([2, 3, 3], [0, 0, 0.5], [0, 1, 0], projector0_modelViewMatrix);
       mat4.perspective(25, 3 / 2, 0.1, 50.0, projector0_perspectiveMatrix);
     }
 
@@ -298,9 +303,12 @@
       gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);      
       gl.useProgram(visualizeProgram);
 
-      // Set up uniforms for the first projector
+      // Set up uniforms and texture for the first projector
       gl.uniformMatrix4fv(visualizeProgram.uProjector0_ModelViewMatrix, false /* WebGL supports column-major only */, projector0_modelViewMatrix);
       gl.uniformMatrix4fv(visualizeProgram.uProjector0_PerspectiveMatrix, false /* WebGL supports column-major only */, projector0_perspectiveMatrix);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, centerFieldTexture);
+      gl.uniform1i(visualizeProgram.texProjector0Sampler, 1);
 
       // Set uniforms for the quad and draw it
       gl.uniformMatrix4fv(visualizeProgram.uPerspectiveMatrix, false /* WebGL supports column-major only */, perspectiveMatrix);
