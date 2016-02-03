@@ -6,6 +6,23 @@
   <script type="text/javascript" src="utils/webgl-utils.js"></script>
   <script type="text/javascript" src="utils/webgl-debug.js"></script>
 
+  <script id="line-shader-fs" type="x-shader/x-fragment">
+    precision highp float;
+    uniform vec4 color;
+    void main(void) {
+      gl_FragColor = color;
+    }
+  </script>
+  <script id="line-shader-vs" type="x-shader/x-vertex">
+    precision highp float;
+    attribute vec3 aPosition;
+    uniform mat4 uMVMatrix;
+    uniform mat4 uProjMatrix;
+    void main(void) {
+      gl_Position = uProjMatrix * uMVMatrix * vec4(aPosition, 1.0);
+    }
+  </script>
+
   <script id="visualize-shader-fs" type="x-shader/x-fragment">
     precision highp float;
     
@@ -145,6 +162,7 @@
     }
 
     var visualizeProgram;
+    var lineProgram;
 
     // Utility function to get and compile a shader
     function getShader(gl, id) {
@@ -202,7 +220,23 @@
       // Projectors' uniforms and textures
       visualizeProgram.uProjector0_ModelViewMatrix = gl.getUniformLocation(visualizeProgram, "uProjector0_ModelViewMatrix");
       visualizeProgram.uProjector0_PerspectiveMatrix = gl.getUniformLocation(visualizeProgram, "uProjector0_PerspectiveMatrix");
-      visualizeProgram.texProjector0Sampler = gl.getUniformLocation(visualizeProgram, "texProjector0Sampler");      
+      visualizeProgram.texProjector0Sampler = gl.getUniformLocation(visualizeProgram, "texProjector0Sampler");    
+
+      vertexShader = getShader(gl, "line-shader-vs");
+      fragmentShader = getShader(gl, "line-shader-fs");
+      lineProgram = gl.createProgram();
+      gl.attachShader(lineProgram, vertexShader);
+      gl.attachShader(lineProgram, fragmentShader);
+      gl.linkProgram(lineProgram);
+      if (!gl.getProgramParameter(lineProgram, gl.LINK_STATUS))
+          alert("Could not initialize shaders");
+      gl.useProgram(lineProgram);
+      // Bind uniforms and attributes
+      lineProgram.aPosition = gl.getAttribLocation(lineProgram, "aPosition");
+      gl.enableVertexAttribArray(lineProgram.aPosition);   
+      lineProgram.uProjMatrix = gl.getUniformLocation(lineProgram, "uProjMatrix");
+      lineProgram.uMVMatrix = gl.getUniformLocation(lineProgram, "uMVMatrix");
+      lineProgram.color = gl.getUniformLocation(lineProgram, "color"); 
     }
 
     var fieldTexture;
@@ -286,14 +320,21 @@
         lastMouseY = newY;
     }
 
-    // Projectors matrices
+    // Projectors matrices and parameters
+    var projector0_position = [2, 3, 3];
+    var projector0_center = [0, 0, 0.5]; // The point the projector is looking at
+    var projector0_up = [0, 1, 0];
+    var projector0_fovy = 25;
+    var projector0_aspect = 3 / 2;
+    var projector0_near = 0.1;
+    var projector0_far = 50.0;
     var projector0_modelViewMatrix = mat4.create();
     var projector0_perspectiveMatrix = mat4.create();
 
     function setupProjectorsMatrices() {
       // First time initialization of projectors' matrices
-      mat4.lookAt([2, 3, 3], [0, 0, 0.5], [0, 1, 0], projector0_modelViewMatrix);
-      mat4.perspective(25, 3 / 2, 0.1, 50.0, projector0_perspectiveMatrix);
+      mat4.lookAt(projector0_position, projector0_center, projector0_up, projector0_modelViewMatrix);
+      mat4.perspective(projector0_fovy, projector0_aspect, projector0_near, projector0_far, projector0_perspectiveMatrix);
     }
 
     function drawScene() {
@@ -330,6 +371,62 @@
       gl.vertexAttribPointer(visualizeProgram.aTextureCoords, 2, gl.FLOAT, false, 5 * 4 /* 5 floats */, 3 * 4);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, quad_indices);
       gl.drawElements(gl.TRIANGLES, quad_indices.count, gl.UNSIGNED_SHORT, 0);
+
+      // Draw projectors extents lines
+      gl.useProgram(lineProgram);
+      gl.uniformMatrix4fv(lineProgram.uProjMatrix, false /* WebGL supports column-major only */, perspectiveMatrix); // Same as for the quad scene
+      gl.uniformMatrix4fv(lineProgram.uMVMatrix, false /* WebGL supports column-major only */, modelViewMatrix);
+      gl.uniform4fv(lineProgram.color, [255.0, 255.0, 255.0, 255.0]);
+      var mvp = mat4.create();
+      mat4.multiply(perspectiveMatrix, mvp, mvp);
+
+      // Get vector from eye to center
+      var vEye = vec3.create(projector0_position);
+      var vCenter = vec3.create(projector0_center);
+      var vDir = vec3.create();
+      var vRight = vec3.create();
+      // Remember that webGL matrices are column-major stored - get the up vector from the transformed MV matrix
+      var vUp = vec3.create([projector0_modelViewMatrix[1], projector0_modelViewMatrix[5], projector0_modelViewMatrix[9]]);
+      vec3.subtract(vCenter, vEye, vDir);
+      vec3.cross(vDir, vUp, vRight);
+      vec3.normalize(vDir, vDir);
+      vec3.normalize(vUp, vUp);
+      vec3.normalize(vRight, vRight);
+      var fovy = degToRad(projector0_fovy);
+      var fovx = Math.atan(projector0_aspect * Math.tan(fovy));
+      // Get the 4 frustum vectors
+      var vUpIncrementZF = vec3.create();
+      var vRightIncrementZF = vec3.create();
+      vec3.scale(vUp, projector0_near * Math.tan(fovy / 2.0), vUpIncrementZF);
+      vec3.scale(vRight, projector0_near * Math.tan(fovx / 2.0), vRightIncrementZF);
+      vec3.scale(vDir, projector0_near, vDir);
+      var vTopLeft = vec3.create();
+      vec3.add(vDir, vUpIncrementZF, vTopLeft);
+      vec3.add(vTopLeft, vRightIncrementZF, vTopLeft);
+      vec3.normalize(vTopLeft, vTopLeft);
+
+      vec3.scale(vTopLeft, 50.0, vTopLeft);
+
+      //var projector_distance_from_zeroY_plane
+
+      var transf_pt = vec3.create(projector0_position);
+      vec3.add(transf_pt, vTopLeft, transf_pt);
+      //mat4.multiplyVec3(mvp, transf_pt, transf_pt);
+      var vtx = new Float32Array([projector0_position[0],projector0_position[1],projector0_position[2], transf_pt[0], transf_pt[1], transf_pt[2]]);
+      var idx = new Uint16Array([0, 1]);
+      vbuf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, vbuf);
+      gl.bufferData(gl.ARRAY_BUFFER, vtx, gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, null);
+      ibuf = gl.createBuffer();
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibuf);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+      gl.lineWidth(3.0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, vbuf);
+      gl.vertexAttribPointer(lineProgram.aPosition, 3, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibuf);
+      gl.drawElements(gl.LINES, 2, gl.UNSIGNED_SHORT, 0);
     
       // Cleanup
       gl.bindTexture(gl.TEXTURE_2D, null);
