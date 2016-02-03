@@ -397,6 +397,7 @@
       // Get the 4 frustum vectors
       var vUpIncrementZF = vec3.create();
       var vRightIncrementZF = vec3.create();
+      // Check out the image at https://i-msdn.sec.s-msft.com/dynimg/IC412711.png to understand this
       vec3.scale(vUp, projector0_near * Math.tan(fovy / 2.0), vUpIncrementZF);
       vec3.scale(vRight, projector0_near * Math.tan(fovx / 2.0), vRightIncrementZF);
       vec3.scale(vDir, projector0_near, vDir);
@@ -404,16 +405,121 @@
       vec3.add(vDir, vUpIncrementZF, vTopLeft);
       vec3.add(vTopLeft, vRightIncrementZF, vTopLeft);
       vec3.normalize(vTopLeft, vTopLeft);
+      var vTopRight = vec3.create();
+      vec3.add(vDir, vUpIncrementZF, vTopRight);
+      vec3.subtract(vTopRight, vRightIncrementZF, vTopRight);
+      vec3.normalize(vTopRight, vTopRight);
+      var vBottomLeft = vec3.create();
+      vec3.subtract(vDir, vUpIncrementZF, vBottomLeft);
+      vec3.subtract(vBottomLeft, vRightIncrementZF, vBottomLeft);
+      vec3.normalize(vBottomLeft, vBottomLeft);
+      var vBottomRight = vec3.create();
+      vec3.subtract(vDir, vUpIncrementZF, vBottomRight);
+      vec3.add(vBottomRight, vRightIncrementZF, vBottomRight);
+      vec3.normalize(vBottomRight, vBottomRight);
 
-      vec3.scale(vTopLeft, 50.0, vTopLeft);
+      var calculateIntersectionWithPlaneY0 = function(point_in_plane, plane_normal, line_point1, line_point2) {
+        var temp1 = vec3.create();
+        var temp2 = vec3.create();
+        vec3.subtract(point_in_plane, line_point1, temp1);
+        vec3.subtract(line_point2, line_point1, temp2);
+        var out1, out2;
+        out1 = vec3.dot(plane_normal, temp1);
+        out2 = vec3.dot(plane_normal, temp2);
+        if(out2 == 0)
+          return NaN;
+        else
+          return out1 / out2;        
+      };
+      var scaleAndAdd = function(vector, othervector, factor) {
+        var tmp = vec3.create();
+        vec3.scale(othervector, factor, tmp);
+        var tmp2 = vec3.create();
+        vec3.add(vector, tmp, tmp2);
+        return tmp2;
+      };
+
+      var vTopLeftEndPoint = vec3.create(projector0_position);      
+      vTopLeftEndPoint = scaleAndAdd(vTopLeftEndPoint, vTopLeft, projector0_far);
+      var int0 = calculateIntersectionWithPlaneY0(vec3.create([0, 0, 0]), vec3.create([0, 1, 0]), vec3.create(projector0_position),
+        vTopLeftEndPoint);
+
+      var vTopRightEndPoint = vec3.create(projector0_position);      
+      vTopRightEndPoint = scaleAndAdd(vTopRightEndPoint, vTopRight, projector0_far);
+      var int1 = calculateIntersectionWithPlaneY0(vec3.create([0, 0, 0]), vec3.create([0, 1, 0]), vec3.create(projector0_position),
+        vTopRightEndPoint);
+
+      var vBottomLeftEndPoint = vec3.create(projector0_position);      
+      vBottomLeftEndPoint = scaleAndAdd(vBottomLeftEndPoint, vBottomLeft, projector0_far);
+      var int2 = calculateIntersectionWithPlaneY0(vec3.create([0, 0, 0]), vec3.create([0, 1, 0]), vec3.create(projector0_position),
+        vBottomLeftEndPoint);
+
+      var vBottomRightEndPoint = vec3.create(projector0_position);      
+      vBottomRightEndPoint = scaleAndAdd(vBottomRightEndPoint, vBottomRight, projector0_far);
+      var int3 = calculateIntersectionWithPlaneY0(vec3.create([0, 0, 0]), vec3.create([0, 1, 0]), vec3.create(projector0_position),
+        vBottomRightEndPoint);
+
+      //vec3.scale(vTopLeft, 50.0, vTopLeft);
+      //vec3.scale(vTopRight, 50.0, vTopRight);
+      //vec3.scale(vBottomLeft, 50.0, vBottomLeft);
+      //vec3.scale(vBottomRight, 50.0, vBottomRight);
 
       //var projector_distance_from_zeroY_plane
 
-      var transf_pt = vec3.create(projector0_position);
-      vec3.add(transf_pt, vTopLeft, transf_pt);
-      //mat4.multiplyVec3(mvp, transf_pt, transf_pt);
-      var vtx = new Float32Array([projector0_position[0],projector0_position[1],projector0_position[2], transf_pt[0], transf_pt[1], transf_pt[2]]);
-      var idx = new Uint16Array([0, 1]);
+      var transf_pt0 = vec3.create();
+      if(int0 == NaN)
+        transf_pt0 = vTopLeftEndPoint;
+      else {
+        var start = vec3.create(projector0_position);
+        var tmp = vec3.create();
+        vec3.subtract(vTopLeftEndPoint, start, tmp);
+        vec3.scale(tmp, int0, tmp);
+        transf_pt0 = start;
+        vec3.add(transf_pt0, tmp, transf_pt0);
+      }
+      var transf_pt1 = vec3.create();
+      if(int1 == NaN)
+        transf_pt1 = vTopLeftEndPoint;
+      else {
+        var start = vec3.create(projector0_position);
+        var tmp = vec3.create();
+        vec3.subtract(vTopRightEndPoint, start, tmp);
+        vec3.scale(tmp, int1, tmp);
+        transf_pt1 = start;
+        vec3.add(transf_pt1, tmp, transf_pt1);
+      }
+      var transf_pt2 = vec3.create();
+      if(int2 == NaN)
+        transf_pt2 = vTopLeftEndPoint;
+      else {
+        var start = vec3.create(projector0_position);
+        var tmp = vec3.create();
+        vec3.subtract(vBottomLeftEndPoint, start, tmp);
+        vec3.scale(tmp, int2, tmp);
+        transf_pt2 = start;
+        vec3.add(transf_pt2, tmp, transf_pt2);
+      }
+      var transf_pt3 = vec3.create();
+      if(int3 == NaN)
+        transf_pt3 = vTopLeftEndPoint;
+      else {
+        var start = vec3.create(projector0_position);
+        var tmp = vec3.create();
+        vec3.subtract(vBottomRightEndPoint, start, tmp);
+        vec3.scale(tmp, int3, tmp);
+        transf_pt3 = start;
+        vec3.add(transf_pt3, tmp, transf_pt3);
+      }
+
+      var vtx = new Float32Array([projector0_position[0],projector0_position[1],projector0_position[2], 
+                                  transf_pt0[0], transf_pt0[1], transf_pt0[2],
+                                  transf_pt1[0], transf_pt1[1], transf_pt1[2],
+                                  transf_pt2[0], transf_pt2[1], transf_pt2[2],
+                                  transf_pt3[0], transf_pt3[1], transf_pt3[2]]);
+      var idx = new Uint16Array([0, 1,
+                                 0, 2,
+                                 0, 3,
+                                 0, 4]);
       vbuf = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, vbuf);
       gl.bufferData(gl.ARRAY_BUFFER, vtx, gl.STATIC_DRAW);
@@ -426,7 +532,7 @@
       gl.bindBuffer(gl.ARRAY_BUFFER, vbuf);
       gl.vertexAttribPointer(lineProgram.aPosition, 3, gl.FLOAT, false, 0, 0);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibuf);
-      gl.drawElements(gl.LINES, 2, gl.UNSIGNED_SHORT, 0);
+      gl.drawElements(gl.LINES, 8, gl.UNSIGNED_SHORT, 0);
     
       // Cleanup
       gl.bindTexture(gl.TEXTURE_2D, null);
