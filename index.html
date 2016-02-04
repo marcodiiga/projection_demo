@@ -273,52 +273,6 @@
       centerFieldTexture.image.src = "assets/centerfield.png";
     }
 
-    var mouseDown = false;
-    var lastMouseX = null;
-    var lastMouseY = null;
-    var sceneRotationMatrix = mat4.create();  
-
-    function setupMouseInput(canvas) {
-      canvas.onmousedown = handleMouseDown;
-      document.onmouseup = handleMouseUp;
-      document.onmousemove = handleMouseMove;
-      mat4.identity(sceneRotationMatrix);
-    }
-
-    function handleMouseDown(event) {
-      mouseDown = true;
-      lastMouseX = event.clientX;
-      lastMouseY = event.clientY;
-    }
-
-    function handleMouseUp(event) {
-      mouseDown = false;
-    }
-
-    function degToRad(degrees) {
-        return degrees * Math.PI / 180;
-    }
-
-    function handleMouseMove(event) {
-        if (!mouseDown)
-            return;
-        var newX = event.clientX;
-        var newY = event.clientY;
-
-        var deltaX = newX - lastMouseX
-        var newRotationMatrix = mat4.create();
-        mat4.identity(newRotationMatrix);
-        mat4.rotate(newRotationMatrix, degToRad(deltaX / 10), [0, 1, 0]);
-
-        var deltaY = -(newY - lastMouseY);
-        mat4.rotate(newRotationMatrix, degToRad(deltaY / 10), [1, 0, 0]);
-
-        mat4.multiply(newRotationMatrix, sceneRotationMatrix, sceneRotationMatrix);
-
-        lastMouseX = newX
-        lastMouseY = newY;
-    }
-
     // Projectors matrices and parameters
     function Projector(position, center, up, fovy, aspect, near, far) {
       this.position = position;
@@ -330,12 +284,125 @@
       this.far = far;
       this.modelViewMatrix = mat4.create();
       this.perspectiveMatrix = mat4.create();
-      mat4.lookAt(this.position, this.center, this.up, this.modelViewMatrix);
-      mat4.perspective(this.fovy, this.aspect, this.near, this.far, this.perspectiveMatrix);
+      this.recalculate = function() {
+        mat4.lookAt(this.position, this.center, this.up, this.modelViewMatrix);
+        mat4.perspective(this.fovy, this.aspect, this.near, this.far, this.perspectiveMatrix);
+      }
+      this.recalculate();
     }
     var projectors = [
       new Projector([2, 3, 3], [0, 0, 0.5], [0, 1, 0], 25, 3/2, 0.1, 50.0)
     ];
+
+    var mouseDown = false;
+    var mouseDownElementId;
+    var lastMouseX = null;
+    var lastMouseY = null;
+    var sceneRotationMatrix = mat4.create();  
+
+    function setupMouseInput(canvas) {
+      mat4.identity(sceneRotationMatrix);
+      canvas.onmousedown = handleMouseDown;
+      canvas.onmouseup = handleMouseUp;
+      canvas.onmousemove = handleMouseMove;
+      var arrow_moves = document.getElementsByClassName("arrow_move");
+      for (var i = 0; i < arrow_moves.length; ++i) {
+        arrow_moves[i].onmousedown = handleMouseDown;
+        arrow_moves[i].onmouseup = handleMouseUp;
+        arrow_moves[i].onmousemove = handleMouseMove;
+      }
+      var arrow_tilts = document.getElementsByClassName("arrow_tilt");
+      for (var i = 0; i < arrow_tilts.length; ++i) {
+        arrow_tilts[i].onmousedown = handleMouseDown;
+        arrow_tilts[i].onmouseup = handleMouseUp;
+        arrow_tilts[i].onmousemove = handleMouseMove;
+      }
+    }
+
+    function handleMouseDown(event) {
+      mouseDown = true;
+      // Get element id (cross-browser friendly) where mouse was pressed
+      mouseDownElementId = event.target ? event.target.id : event.srcElement.id;
+      lastMouseX = event.clientX;
+      lastMouseY = event.clientY;
+    }
+
+    function handleMouseUp(event) {
+      mouseDown = false;
+      mouseDownElementId = null;
+    }
+
+    function degToRad(degrees) {
+      return degrees * Math.PI / 180;
+    }
+
+    function handleMouseMove(event) {
+      
+      if(!mouseDown)
+        return;
+
+      var newX = event.clientX;
+      var newY = event.clientY;
+      var deltaX = newX - lastMouseX;
+      var deltaY = - (newY - lastMouseY);
+
+      if (mouseDownElementId == "canvas") { // Canvas handling        
+        var newRotationMatrix = mat4.create();
+        mat4.identity(newRotationMatrix);
+        mat4.rotate(newRotationMatrix, degToRad(deltaX / 10), [0, 1, 0]);
+        mat4.rotate(newRotationMatrix, degToRad(deltaY / 10), [1, 0, 0]);
+        mat4.multiply(newRotationMatrix, sceneRotationMatrix, sceneRotationMatrix);
+      } else if (mouseDownElementId.indexOf("arrow_move") == 0) { // Projector move handling
+        
+        var id = parseInt(mouseDownElementId.substring("arrow_move".length, mouseDownElementId.length), 10);
+
+        deltaX *= -0.05;
+        deltaY *= 0.05;
+
+        var rightVec = vec3.create([1, 0, 0]);
+        var upVec = vec3.create([0, 1, 0]);
+        vec3.scale(rightVec, deltaX, rightVec);
+        vec3.scale(upVec, deltaY, upVec);
+
+        var pos = vec3.create(projectors[id].position);
+        vec3.add(pos, rightVec, pos);
+        vec3.add(pos, upVec, pos);
+
+        projectors[id].position = pos;
+        projectors[id].recalculate();
+      } else if (mouseDownElementId.indexOf("arrow_tilt") == 0) { // Projector tilt handling
+        
+        var id = parseInt(mouseDownElementId.substring("arrow_tilt".length, mouseDownElementId.length), 10);
+
+        deltaX *= -0.05;
+        deltaY *= 0.05;
+
+        // Get vector from eye to center
+        var vUp = vec3.create();
+        var vRight = vec3.create();
+        // Remember that webGL matrices are column-major stored - get the right vector from the transformed MV matrix
+        // See http://3dengine.org/Right-up-back_from_modelview
+        var vRight = vec3.create([projectors[id].modelViewMatrix[0], 
+                                  projectors[id].modelViewMatrix[4], 
+                                  projectors[id].modelViewMatrix[8]]);
+        var vUp = vec3.create([projectors[id].modelViewMatrix[1], 
+                               projectors[id].modelViewMatrix[5], 
+                               projectors[id].modelViewMatrix[9]]);
+
+        vec3.normalize(vRight, vRight);
+        vec3.normalize(vUp, vUp);
+        vec3.scale(vUp, deltaY, vUp);
+        vec3.scale(vRight, deltaX, vRight);
+
+        vec3.add(projectors[id].center, vUp, projectors[id].center);
+        vec3.add(projectors[id].center, vRight, projectors[id].center);
+
+        projectors[id].recalculate();
+      }
+
+      lastMouseX = newX
+      lastMouseY = newY;
+    }
 
     function drawProjectorFrustumLines(id, color, modelViewMatrix, perspectiveMatrix) {
       gl.useProgram(lineProgram);
@@ -560,11 +627,11 @@
       var screenX = ((result[0] + 1.0) / 2.0) * gl.viewportWidth;
       var screenY = ((1.0 - result[1]) / 2.0) * gl.viewportHeight;
 
-      var arrowElement = document.getElementById("arrow0_move");
+      var arrowElement = document.getElementById("arrow_move0");
       //var arrowStyle = window.getComputedStyle(arrowElement);      
       arrowElement.style.left = screenX - 15 - 20;
       arrowElement.style.top = screenY - 15;
-      arrowElement = document.getElementById("arrow0_tilt");
+      arrowElement = document.getElementById("arrow_tilt0");
       arrowElement.style.left = screenX - 15 + 20;
       arrowElement.style.top = screenY - 15;
     
@@ -608,8 +675,8 @@
 <body onload="webGLStart();">
   <div id="container">
     <canvas id="canvas" style="border: none;" width="500" height="500"></canvas>
-    <div id="arrow0_move" class="arrow_move"></div>
-    <div id="arrow0_tilt" class="arrow_tilt"></div>
+    <div id="arrow_move0" class="arrow_move"></div>
+    <div id="arrow_tilt0" class="arrow_tilt"></div>
   </div>
 </body>
 </html>
