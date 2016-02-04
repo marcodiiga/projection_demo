@@ -486,7 +486,8 @@
                                   transf_pt0[0], transf_pt0[1], transf_pt0[2],
                                   transf_pt1[0], transf_pt1[1], transf_pt1[2],
                                   transf_pt2[0], transf_pt2[1], transf_pt2[2],
-                                  transf_pt3[0], transf_pt3[1], transf_pt3[2]]);
+                                  transf_pt3[0], transf_pt3[1], transf_pt3[2]
+                                  ]);
       var idx = new Uint16Array([0, 1,
                                  0, 2,
                                  0, 3,
@@ -546,6 +547,26 @@
       // Draw projectors extents lines
       var linesColor = [255.0, 255.0, 255.0, 255.0];
       drawProjectorFrustumLines(0, linesColor, modelViewMatrix, perspectiveMatrix);
+
+      // Get projector screen position and, if visible, display arrow controls on it
+      var result = [0, 0, 0, 0];
+      var mvp = mat4.create();
+      //mat4.inverse(modelViewMatrix, mvp);
+      mat4.multiply(perspectiveMatrix, modelViewMatrix, mvp);
+      mat4.multiplyVec4(mvp, [projectors[0].position[0], projectors[0].position[1], projectors[0].position[2], 1.0], result);
+      result[0] /= result[3];
+      result[1] /= result[3];
+
+      var screenX = ((result[0] + 1.0) / 2.0) * gl.viewportWidth;
+      var screenY = ((1.0 - result[1]) / 2.0) * gl.viewportHeight;
+
+      var arrowElement = document.getElementById("arrow0_move");
+      //var arrowStyle = window.getComputedStyle(arrowElement);      
+      arrowElement.style.left = screenX - 15 - 20;
+      arrowElement.style.top = screenY - 15;
+      arrowElement = document.getElementById("arrow0_tilt");
+      arrowElement.style.left = screenX - 15 + 20;
+      arrowElement.style.top = screenY - 15;
     
       // Cleanup
       gl.bindTexture(gl.TEXTURE_2D, null);
@@ -559,8 +580,36 @@
     }
 
   </script>
+  <style>
+    #container {
+      position: relative;
+    }
+
+    div.arrow_move {
+      position: absolute;
+      width: 30px;
+      height: 30px;
+      background: url('assets/movearrows.png');
+    }
+    div.arrow_move:hover {
+      background: url('assets/movearrows_hover.png');
+    }
+    div.arrow_tilt {
+      position: absolute;
+      width: 30px;
+      height: 30px;
+      background: url('assets/tiltarrows.png');
+    }
+    div.arrow_tilt:hover {
+      background: url('assets/tiltarrows_hover.png');
+    }
+  </style>
 </head>
 <body onload="webGLStart();">
-  <canvas id="canvas" style="border: none;" width="500" height="500"></canvas>
+  <div id="container">
+    <canvas id="canvas" style="border: none;" width="500" height="500"></canvas>
+    <div id="arrow0_move" class="arrow_move"></div>
+    <div id="arrow0_tilt" class="arrow_tilt"></div>
+  </div>
 </body>
 </html>
