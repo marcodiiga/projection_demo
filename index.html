@@ -93,6 +93,10 @@
     var gl; // gl instance
     var fptex_extension;
     var fptextlinear_extension;
+
+    // Camera matrices
+    var perspectiveMatrix = mat4.create();
+    var modelViewMatrix = mat4.create();
     
     function webGLStart() {
       var canvas = document.getElementById("canvas");
@@ -305,18 +309,39 @@
       canvas.onmousedown = handleMouseDown;
       canvas.onmouseup = handleMouseUp;
       canvas.onmousemove = handleMouseMove;
+      canvas.addEventListener('mouseout', onMouseOutOfCanvas, true);
       var arrow_moves = document.getElementsByClassName("arrow_move");
       for (var i = 0; i < arrow_moves.length; ++i) {
         arrow_moves[i].onmousedown = handleMouseDown;
         arrow_moves[i].onmouseup = handleMouseUp;
         arrow_moves[i].onmousemove = handleMouseMove;
+        arrow_moves[i].ondragstart = noDragScroll;
+        arrow_moves[i].ondrop = noDragScroll;
       }
       var arrow_tilts = document.getElementsByClassName("arrow_tilt");
       for (var i = 0; i < arrow_tilts.length; ++i) {
         arrow_tilts[i].onmousedown = handleMouseDown;
         arrow_tilts[i].onmouseup = handleMouseUp;
         arrow_tilts[i].onmousemove = handleMouseMove;
+        arrow_tilts[i].ondragstart = noDragScroll;
+        arrow_tilts[i].ondrop = noDragScroll;
       }
+    }
+
+    function noDragScroll(event) {
+      return false;
+    }
+
+    function onMouseOutStopPropagation(event) {
+      event.cancelBubble = true;
+      if (event.stopPropagation) event.stopPropagation();
+    }
+
+    function onMouseOutOfCanvas(event) {
+        var e = event.toElement || event.relatedTarget;
+        if (mouseDownElementId !== "canvas") // This is not handled for arrows
+          return;
+       handleMouseUp(event);
     }
 
     function handleMouseDown(event) {
@@ -356,11 +381,16 @@
         
         var id = parseInt(mouseDownElementId.substring("arrow_move".length, mouseDownElementId.length), 10);
 
-        deltaX *= -0.05;
-        deltaY *= 0.05;
+        deltaX *= 0.01;
+        deltaY *= 0.01;
 
-        var rightVec = vec3.create([1, 0, 0]);
-        var upVec = vec3.create([0, 1, 0]);
+        recalculateCameraMatrices();
+
+        var cameraSpace = perspectiveMatrix;
+        mat4.multiply(cameraSpace, modelViewMatrix, cameraSpace); // scene rotation is already computed into modelViewMatrix
+
+        var rightVec = vec3.create([cameraSpace[0], cameraSpace[4], cameraSpace[8]]);
+        var upVec = vec3.create([cameraSpace[1], cameraSpace[5], cameraSpace[9]]);
         vec3.scale(rightVec, deltaX, rightVec);
         vec3.scale(upVec, deltaY, upVec);
 
@@ -574,6 +604,12 @@
       gl.drawElements(gl.LINES, 8, gl.UNSIGNED_SHORT, 0);
     }
 
+    function recalculateCameraMatrices() {
+      mat4.lookAt([0, 10, -10], [0, 0, 0], [0, 1, 0], modelViewMatrix);
+      mat4.multiply(modelViewMatrix, sceneRotationMatrix, modelViewMatrix);
+      mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 0.1, 50.0, perspectiveMatrix);
+    }
+
     function drawScene() {
 
       if(fieldTextureIsSafeToRender == false || centerFieldTextureIsSafeToRender == false)
@@ -582,11 +618,7 @@
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
       // Set up common uniforms for the quad field
-      var perspectiveMatrix = mat4.create();
-      var modelViewMatrix = mat4.create();      
-      mat4.lookAt([0, 10, -10], [0, 0, 0], [0, 1, 0], modelViewMatrix);
-      mat4.multiply(modelViewMatrix, sceneRotationMatrix, modelViewMatrix);
-      mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 0.1, 50.0, perspectiveMatrix);
+      recalculateCameraMatrices(); // Recalculate modelview and projection matrices
       gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);      
       gl.useProgram(visualizeProgram);
 
