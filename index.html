@@ -426,21 +426,21 @@
         vec3.subtract(toCenterVec, projectors[id].center, projectors[id].position);
 
         var rotationMat = mat4.create();
+        var newUpVector = vec3.clone(vUp);
         mat4.identity(rotationMat);
         mat4.rotate(rotationMat, rotationMat, degToRad(deltaY), vRight);
-
+        vec3.transformMat4(newUpVector, newUpVector, rotationMat);
         vec3.transformMat4(toCenterVec, toCenterVec, rotationMat);
 
         mat4.identity(rotationMat);
         mat4.rotate(rotationMat, rotationMat, degToRad(deltaX), vUp);
-
-        var result = vec3.create();
         vec3.transformMat4(toCenterVec, toCenterVec, rotationMat);
 
         var newCenter = vec3.create();
         vec3.add(newCenter, projectors[id].position, toCenterVec);
 
         projectors[id].center = newCenter;
+        projectors[id].up = newUpVector;
 
         projectors[id].recalculate();
       }
