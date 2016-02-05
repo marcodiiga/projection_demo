@@ -357,7 +357,6 @@
       var cameraDir = vec3.create();
       vec3.subtract(cameraDir, cameraCenter, cameraPos);
 
-      //var cameraDir = vec3.fromValues(-mvp[2], -mvp[6], -mvp[10]); // - back vector
       vec3.normalize(cameraDir, cameraDir);
       vec3.scale(cameraDir, cameraDir, -delta);
       vec3.add(sceneZoomVector, sceneZoomVector, cameraDir);
