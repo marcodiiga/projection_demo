@@ -307,13 +307,16 @@
     var lastMouseX = null;
     var lastMouseY = null;
     var sceneRotationMatrix = mat4.create();
+    var sceneZoomVector = vec3.create();
 
     function setupMouseInput(canvas) {
       mat4.identity(sceneRotationMatrix);
+      sceneZoomVector = vec3.fromValues(0, 0, 0);
       canvas.onmousedown = handleMouseDown;
       canvas.onmouseup = handleMouseUp;
       canvas.onmousemove = handleMouseMove;
-      canvas.addEventListener('mouseout', onMouseOutOfCanvas, true);
+      canvas.addEventListener('mouseout', onMouseOutOfCanvas, true); // Stop canvas input if mouse gets out of it
+      canvas.onwheel = handleMouseWheel;
       var arrow_moves = document.getElementsByClassName("arrow_move");
       for (var i = 0; i < arrow_moves.length; ++i) {
         arrow_moves[i].onmousedown = handleMouseDown;
@@ -336,16 +339,28 @@
       return false;
     }
 
-    function onMouseOutStopPropagation(event) {
-      event.cancelBubble = true;
-      if (event.stopPropagation) event.stopPropagation();
-    }
-
     function onMouseOutOfCanvas(event) {
         var e = event.toElement || event.relatedTarget;
         if (mouseDownElementId !== "canvas") // This is not handled for arrows
           return;
        handleMouseUp(event);
+    }
+
+    function handleMouseWheel(event) {
+      // Get cross-browser wheel delta
+      var delta = Math.max(-1, Math.min(1, (event.wheelDelta || -event.detail)));
+      var mvp = mat4.clone(perspectiveMatrix);
+      mat4.multiply(mvp, mvp, modelViewMatrix);
+ 
+      var cameraPos = vec3.fromValues(0, 10, -10);
+      var cameraCenter = vec3.fromValues(0, 0, 0);
+      var cameraDir = vec3.create();
+      vec3.subtract(cameraDir, cameraCenter, cameraPos);
+
+      //var cameraDir = vec3.fromValues(-mvp[2], -mvp[6], -mvp[10]); // - back vector
+      vec3.normalize(cameraDir, cameraDir);
+      vec3.scale(cameraDir, cameraDir, -delta);
+      vec3.add(sceneZoomVector, sceneZoomVector, cameraDir);
     }
 
     function handleMouseDown(event) {
@@ -404,44 +419,24 @@
         
         var id = parseInt(mouseDownElementId.substring("arrow_tilt".length, mouseDownElementId.length), 10);
 
-        //deltaX *= -0.05;
-        //deltaY *= 0.05;
+        deltaX *= 0.01;
+        deltaY *= 0.01;
 
-        var vUp = vec3.create();
-        var vRight = vec3.create();
-        // Remember that webGL matrices are column-major stored - get the right vector from the transformed MV matrix
-        // See http://3dengine.org/Right-up-back_from_modelview
-        var vRight = vec3.fromValues( projectors[id].modelViewMatrix[0], 
-                                      projectors[id].modelViewMatrix[4], 
-                                      projectors[id].modelViewMatrix[8] );
-        var vUp = vec3.fromValues(  projectors[id].modelViewMatrix[1], 
-                                    projectors[id].modelViewMatrix[5], 
-                                    projectors[id].modelViewMatrix[9] );
+        recalculateCameraMatrices();
 
-        vec3.normalize(vRight, vRight);
-        vec3.normalize(vUp, vUp);
+        var cameraSpace = perspectiveMatrix;
+        mat4.multiply(cameraSpace, cameraSpace, modelViewMatrix); // scene rotation is already computed into modelViewMatrix
 
+        var rightVec = vec3.fromValues(cameraSpace[0], cameraSpace[4], cameraSpace[8]);
+        var upVec = vec3.fromValues(cameraSpace[1], cameraSpace[5], cameraSpace[9]);
+        vec3.scale(rightVec, rightVec, deltaX);
+        vec3.scale(upVec, upVec, deltaY);
 
-        var toCenterVec = vec3.create();
-        vec3.subtract(toCenterVec, projectors[id].center, projectors[id].position);
+        var pos = vec3.clone(projectors[id].center);
+        vec3.add(pos, pos, rightVec);
+        vec3.add(pos, pos, upVec);
 
-        var rotationMat = mat4.create();
-        var newUpVector = vec3.clone(vUp);
-        mat4.identity(rotationMat);
-        mat4.rotate(rotationMat, rotationMat, degToRad(deltaY), vRight);
-        vec3.transformMat4(newUpVector, newUpVector, rotationMat);
-        vec3.transformMat4(toCenterVec, toCenterVec, rotationMat);
-
-        mat4.identity(rotationMat);
-        mat4.rotate(rotationMat, rotationMat, degToRad(deltaX), vUp);
-        vec3.transformMat4(toCenterVec, toCenterVec, rotationMat);
-
-        var newCenter = vec3.create();
-        vec3.add(newCenter, projectors[id].position, toCenterVec);
-
-        projectors[id].center = newCenter;
-        projectors[id].up = newUpVector;
-
+        projectors[id].center = pos;
         projectors[id].recalculate();
       }
 
@@ -621,7 +616,8 @@
 
     function recalculateCameraMatrices() {
       mat4.lookAt(modelViewMatrix, [0, 10, -10], [0, 0, 0], [0, 1, 0]);
-      mat4.multiply(modelViewMatrix, modelViewMatrix, sceneRotationMatrix);
+      mat4.translate(modelViewMatrix, modelViewMatrix, sceneZoomVector);
+      mat4.multiply(modelViewMatrix, modelViewMatrix, sceneRotationMatrix);      
       mat4.perspective(perspectiveMatrix, degToRad(45), gl.viewportWidth / gl.viewportHeight, 0.1, 50.0);
     }
 
