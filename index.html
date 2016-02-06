@@ -124,7 +124,7 @@
       setupShaderPrograms();
       setupTextures();
       //initFramebuffer();
-      setupMouseInput(canvas);
+      setupInput(canvas);
 
       gl.clearColor(0.0, 0.0, 0.0, 1.0);
       gl.enable(gl.DEPTH_TEST);
@@ -282,7 +282,7 @@
     }
 
     // Projectors matrices and parameters
-    function Projector(position, center, up, fovy, aspect, near, far) {
+    function Projector(position, center, up, fovy /* degrees */, aspect, near, far) {
       this.position = position;
       this.center = center; // The point the projector is looking at
       this.up = up;
@@ -309,7 +309,7 @@
     var sceneRotationMatrix = mat4.create();
     var sceneZoomVector = vec3.create();
 
-    function setupMouseInput(canvas) {
+    function setupInput(canvas) {
       mat4.identity(sceneRotationMatrix);
       sceneZoomVector = vec3.fromValues(0, 0, 0);
       canvas.onmousedown = handleMouseDown;
@@ -317,6 +317,7 @@
       canvas.onmousemove = handleMouseMove;
       canvas.addEventListener('mouseout', onMouseOutOfCanvas, true); // Stop canvas input if mouse gets out of it
       canvas.onwheel = handleMouseWheel;
+      document.onkeydown = handleKeyDown;      
       var arrow_moves = document.getElementsByClassName("arrow_move");
       for (var i = 0; i < arrow_moves.length; ++i) {
         arrow_moves[i].onmousedown = handleMouseDown;
@@ -333,6 +334,42 @@
         arrow_tilts[i].ondragstart = noDragScroll;
         arrow_tilts[i].ondrop = noDragScroll;
       }
+      var arrow_fovs = document.getElementsByClassName("arrow_fov");
+      for (var i = 0; i < arrow_fovs.length; ++i) {
+        arrow_fovs[i].onmousedown = handleMouseDown;
+        arrow_fovs[i].onmouseup = handleMouseUp;
+        arrow_fovs[i].onmousemove = handleMouseMove;
+        arrow_fovs[i].ondragstart = noDragScroll;
+        arrow_fovs[i].ondrop = noDragScroll;
+      }
+    }
+
+    function handleKeyDown(event) {
+      var key = event.keyCode || event.which;
+      if(key == 72) { // h - Homing
+        var rot = mat3.create();
+        mat3.fromMat4(rot, sceneRotationMatrix);
+        var originalQuatRotation = quat.create(); // Original data
+        var originalVecZoom = vec3.create(); // Original data
+        quat.fromMat3(originalQuatRotation, rot);
+        originalVecZoom = sceneZoomVector;
+        var identityQuat = quat.create(); // Identity by default
+
+        var temporaryQuatRot = quat.create();
+        var temporaryVecZoom = vec3.create();
+
+        var lerpCallback = function (i) { // i is in range [0; 50]
+          var t = i / 50.0;       
+          quat.lerp(temporaryQuatRot, originalQuatRotation, identityQuat, t);
+          vec3.lerp(temporaryVecZoom, originalVecZoom, [0, 0, 0], t);
+          sceneZoomVector = temporaryVecZoom;
+          mat4.fromRotationTranslation(sceneRotationMatrix, temporaryQuatRot, [0, 0, 0]);
+          if(i < 50.0)
+            setTimeout(lerpCallback, 10, i + 1);
+        }
+
+        setTimeout(lerpCallback, 10, 0);
+      }
     }
 
     function noDragScroll(event) {
@@ -348,7 +385,7 @@
 
     function handleMouseWheel(event) {
       // Get cross-browser wheel delta
-      var delta = Math.max(-1, Math.min(1, (event.wheelDelta || -event.detail)));
+      var delta = Math.max(-1, Math.min(1, (event.wheelDelta || -event.deltaY || -event.detail)));
       var mvp = mat4.clone(perspectiveMatrix);
       mat4.multiply(mvp, mvp, modelViewMatrix);
  
@@ -427,17 +464,30 @@
         mat4.multiply(cameraSpace, cameraSpace, modelViewMatrix); // scene rotation is already computed into modelViewMatrix
 
         var rightVec = vec3.fromValues(cameraSpace[0], cameraSpace[4], cameraSpace[8]);
-        var upVec = vec3.fromValues(cameraSpace[1], cameraSpace[5], cameraSpace[9]);
+        var backVec = vec3.fromValues(cameraSpace[2], cameraSpace[6], cameraSpace[10]); // Back of the projector is more intuitive
         vec3.scale(rightVec, rightVec, deltaX);
-        vec3.scale(upVec, upVec, deltaY);
+        vec3.scale(backVec, backVec, deltaY);
 
         var pos = vec3.clone(projectors[id].center);
         vec3.add(pos, pos, rightVec);
-        vec3.add(pos, pos, upVec);
+        vec3.add(pos, pos, backVec);
 
         projectors[id].center = pos;
         projectors[id].recalculate();
-      }
+      } else if (mouseDownElementId.indexOf("arrow_fov") == 0) { // Projector fov handling
+        
+        var id = parseInt(mouseDownElementId.substring("arrow_fov".length, mouseDownElementId.length), 10);
+
+        deltaX *= 0.02;
+        deltaY *= 0.01;
+
+        recalculateCameraMatrices();
+
+        projectors[id].fovy += deltaY;
+        projectors[id].aspect += deltaX;
+        
+        projectors[id].recalculate();
+      } 
 
       lastMouseX = newX
       lastMouseY = newY;
@@ -667,11 +717,13 @@
       var screenY = ((1.0 - result[1]) / 2.0) * gl.viewportHeight;
 
       var arrowElement = document.getElementById("arrow_move0");
-      //var arrowStyle = window.getComputedStyle(arrowElement);      
-      arrowElement.style.left = screenX - 15 - 20;
+      arrowElement.style.left = screenX - 15 - 40;
       arrowElement.style.top = screenY - 15;
       arrowElement = document.getElementById("arrow_tilt0");
-      arrowElement.style.left = screenX - 15 + 20;
+      arrowElement.style.left = screenX - 15;
+      arrowElement.style.top = screenY - 15;
+      arrowElement = document.getElementById("arrow_fov0");
+      arrowElement.style.left = screenX - 15 + 40;
       arrowElement.style.top = screenY - 15;
 
       // Cleanup
@@ -709,13 +761,33 @@
     div.arrow_tilt:hover {
       background: url('assets/tiltarrows_hover.png');
     }
+    div.arrow_fov {
+      position: absolute;
+      width: 30px;
+      height: 30px;
+      background: url('assets/fovarrows.png');
+    }
+    div.arrow_fov:hover {
+      background: url('assets/fovarrows_hover.png');
+    }
   </style>
 </head>
 <body onload="webGLStart();">
   <div id="container">
-    <canvas id="canvas" style="border: none;" width="500" height="500"></canvas>
+    <canvas id="canvas" style="border: none;" width="1200" height="800"></canvas>
     <div id="arrow_move0" class="arrow_move"></div>
     <div id="arrow_tilt0" class="arrow_tilt"></div>
+    <div id="arrow_fov0" class="arrow_fov"></div>
   </div>
+  <p>
+    <ul>
+      <li>Mouse click and move to rotate the scene</li>
+      <li>Mouse wheel to zoom in and out in the scene</li>
+      <li>Key H to home to starting view</li>
+      <li><img src="assets/movearrows.png">Moves the projector in the view plane</li>
+      <li><img src="assets/tiltarrows.png">Tilts the projector in the view plane</li>
+      <li><img src="assets/fovarrows.png">Adjusts the field of view (horizontal) and the aspect ratio (vertical) for the projector</li>
+    </ul>
+  </p>
 </body>
 </html>
